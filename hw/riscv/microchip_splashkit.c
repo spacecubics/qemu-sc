@@ -5,9 +5,9 @@
 #include "hw/core/loader.h"
 #include "hw/core/qdev-properties-system.h"
 #include "hw/core/sysbus.h"
+#include "hw/gpio/sc_gpio.h"
 #include "hw/intc/riscv_aclint.h"
 #include "hw/intc/sifive_plic.h"
-#include "hw/misc/unimp.h"
 #include "hw/riscv/boot.h"
 #include "hw/riscv/riscv_hart.h"
 #include "chardev/char-fe.h"
@@ -188,6 +188,7 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     MemoryRegion *system_memory = get_system_memory();
     const MemMapEntry *memmap = microchip_splashkit_memmap;
     DeviceState *uart;
+    DeviceState *gpio;
     RISCVBootInfo boot_info;
     hwaddr kernel_entry = memmap[MICROCHIP_SPLASHKIT_TCM].base;
 
@@ -223,9 +224,10 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(uart), 0,
                     memmap[MICROCHIP_SPLASHKIT_UART].base);
 
-    create_unimplemented_device("spacecubics.gpio",
-                                memmap[SPACECUBICS_GPIO].base,
-                                memmap[SPACECUBICS_GPIO].size);
+    gpio = qdev_new(TYPE_SC_GPIO);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(gpio), 0,
+                    memmap[SPACECUBICS_GPIO].base);
 
     riscv_boot_info_init(&boot_info, &s->cpus);
     if (machine->kernel_filename) {
