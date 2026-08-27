@@ -229,6 +229,15 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(gpio), 0,
                     memmap[SPACECUBICS_GPIO].base);
 
+    for (int pin = 0; pin < SC_GPIO_PINS; pin++) {
+        qdev_connect_gpio_out(gpio, SC_GPIO_PINS + pin,
+                              qdev_get_gpio_in(gpio,
+                                               2 * SC_GPIO_PINS + pin));
+        qdev_connect_gpio_out(gpio, 2 * SC_GPIO_PINS + pin,
+                              qdev_get_gpio_in(gpio,
+                                               SC_GPIO_PINS + pin));
+    }
+
     riscv_boot_info_init(&boot_info, &s->cpus);
     if (machine->kernel_filename) {
         riscv_load_kernel(machine, &boot_info, kernel_entry, false, NULL);
