@@ -9,6 +9,14 @@ config IBEX
 
 # RISC-V machines in alphabetical order
 
+config MICROCHIP_SPLASHKIT
+    bool
+    default y
+    depends on RISCV32
+    select RISCV_ACLINT
+    select SIFIVE_PLIC
+    select UNIMP
+
 config MICROCHIP_PFSOC
     bool
     default y
