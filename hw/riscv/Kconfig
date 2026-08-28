@@ -15,6 +15,7 @@ config MICROCHIP_SPLASHKIT
     depends on RISCV32
     select RISCV_ACLINT
     select SIFIVE_PLIC
+    select MICROCHIP_COREUART
     select SC_GPIO
     select UNIMP
 
