@@ -125,6 +125,9 @@ static uint64_t sc_gpio_read(void *opaque, hwaddr offset, unsigned int size)
         case SC_GPIO_REG_IP_RST:
             r = s->ip_reset;
             break;
+        case SC_GPIO_REG_SCRATCH_PAD:
+            r = s->scratch_pad;
+            break;
         case SC_GPIO_REG_INT_ENABLE:
             r = s->int_enable;
             break;
@@ -180,6 +183,9 @@ static void sc_gpio_write(void *opaque, hwaddr offset,
         case SC_GPIO_REG_IP_RST:
             s->ip_reset = (uint32_t)value;
             break;
+        case SC_GPIO_REG_SCRATCH_PAD:
+            s->scratch_pad = (uint32_t)value;
+            break;
         case SC_GPIO_REG_INT_ENABLE:
             s->int_enable = (uint32_t)value;
             break;
@@ -227,6 +233,7 @@ static void sc_gpio_reset(DeviceState *dev)
     s->ip_version = BIT(24);
     s->ip_config = s->num_ports;
     s->ip_reset = BIT(0);
+    s->scratch_pad = 0;
     s->int_enable = 0;
     s->int_status = 0;
     qemu_set_irq(s->irq, 0);
