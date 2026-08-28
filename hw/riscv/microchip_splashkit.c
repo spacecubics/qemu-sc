@@ -6,6 +6,7 @@
 #include "hw/core/qdev-properties-system.h"
 #include "hw/core/sysbus.h"
 #include "hw/gpio/sc_gpio.h"
+#include "hw/char/microchip_coreuart.h"
 #include "hw/intc/riscv_aclint.h"
 #include "hw/intc/sifive_plic.h"
 #include "hw/riscv/boot.h"
@@ -42,137 +43,6 @@ static const MemMapEntry microchip_splashkit_memmap[] = {
 /* The DTS PLIC window overlaps the timer; only the register aperture is MMIO. */
 #define MICROCHIP_SPLASHKIT_PLIC_APERTURE_SIZE 0x00201000
 #define MICROCHIP_SPLASHKIT_MTIMER_SIZE 0x00008000
-
-#define TYPE_MICROCHIP_SPLASHKIT_COREUART "microchip-splashkit-coreuart"
-OBJECT_DECLARE_SIMPLE_TYPE(MicrochipSplashKitCoreUARTState,
-                           MICROCHIP_SPLASHKIT_COREUART)
-
-/* Microchip CoreUARTapb register layout. */
-typedef struct MicrochipSplashKitCoreUARTState {
-    SysBusDevice parent_obj;
-    MemoryRegion mmio;
-    CharFrontend chr;
-    uint8_t rx;
-    uint8_t ctrl1;
-    uint8_t ctrl2;
-    bool rx_full;
-} MicrochipSplashKitCoreUARTState;
-
-static uint64_t microchip_splashkit_coreuart_read(void *opaque, hwaddr addr,
-                                                  unsigned size)
-{
-    MicrochipSplashKitCoreUARTState *s = opaque;
-
-    switch (addr) {
-    case 0x4:
-        s->rx_full = false;
-        qemu_chr_fe_accept_input(&s->chr);
-        return s->rx;
-    case 0x8:
-        return s->ctrl1;
-    case 0xc:
-        return s->ctrl2;
-    case 0x10:
-        return 0x1 | (s->rx_full ? 0x2 : 0); /* TXRDY | RXFULL */
-    default:
-        return 0;
-    }
-}
-
-static void microchip_splashkit_coreuart_write(void *opaque, hwaddr addr,
-                                               uint64_t value, unsigned size)
-{
-    MicrochipSplashKitCoreUARTState *s = opaque;
-    uint8_t ch = value;
-
-    switch (addr) {
-    case 0x0:
-        qemu_chr_fe_write_all(&s->chr, &ch, 1);
-        break;
-    case 0x8:
-        s->ctrl1 = value;
-        break;
-    case 0xc:
-        s->ctrl2 = value;
-        break;
-    }
-}
-
-static const MemoryRegionOps microchip_splashkit_coreuart_ops = {
-    .read = microchip_splashkit_coreuart_read,
-    .write = microchip_splashkit_coreuart_write,
-    .endianness = DEVICE_LITTLE_ENDIAN,
-    .valid = {
-        .min_access_size = 1,
-        .max_access_size = 4,
-    },
-};
-
-static int microchip_splashkit_coreuart_can_receive(void *opaque)
-{
-    return !MICROCHIP_SPLASHKIT_COREUART(opaque)->rx_full;
-}
-
-static void microchip_splashkit_coreuart_receive(void *opaque,
-                                                 const uint8_t *buf, int size)
-{
-    MicrochipSplashKitCoreUARTState *s = opaque;
-
-    s->rx = buf[0];
-    s->rx_full = true;
-}
-
-static void microchip_splashkit_coreuart_reset(DeviceState *dev)
-{
-    MicrochipSplashKitCoreUARTState *s = MICROCHIP_SPLASHKIT_COREUART(dev);
-
-    s->rx = 0;
-    s->ctrl1 = 0;
-    s->ctrl2 = 0;
-    s->rx_full = false;
-}
-
-static void microchip_splashkit_coreuart_realize(DeviceState *dev,
-                                                 Error **errp)
-{
-    MicrochipSplashKitCoreUARTState *s = MICROCHIP_SPLASHKIT_COREUART(dev);
-
-    qemu_chr_fe_set_handlers(&s->chr, microchip_splashkit_coreuart_can_receive,
-                             microchip_splashkit_coreuart_receive, NULL, NULL,
-                             s, NULL, true);
-}
-
-static void microchip_splashkit_coreuart_init(Object *obj)
-{
-    MicrochipSplashKitCoreUARTState *s = MICROCHIP_SPLASHKIT_COREUART(obj);
-
-    memory_region_init_io(&s->mmio, obj, &microchip_splashkit_coreuart_ops, s,
-                          TYPE_MICROCHIP_SPLASHKIT_COREUART, 0x1000);
-    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
-}
-
-static const Property microchip_splashkit_coreuart_props[] = {
-    DEFINE_PROP_CHR("chardev", MicrochipSplashKitCoreUARTState, chr),
-};
-
-static void microchip_splashkit_coreuart_class_init(ObjectClass *oc,
-                                                    const void *data)
-{
-    DeviceClass *dc = DEVICE_CLASS(oc);
-
-    dc->realize = microchip_splashkit_coreuart_realize;
-    device_class_set_legacy_reset(dc, microchip_splashkit_coreuart_reset);
-    device_class_set_props(dc, microchip_splashkit_coreuart_props);
-}
-
-static const TypeInfo microchip_splashkit_coreuart_type_info = {
-    .name = TYPE_MICROCHIP_SPLASHKIT_COREUART,
-    .parent = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(MicrochipSplashKitCoreUARTState),
-    .instance_init = microchip_splashkit_coreuart_init,
-    .class_init = microchip_splashkit_coreuart_class_init,
-};
-
 #define TYPE_MICROCHIP_SPLASHKIT_MACHINE MACHINE_TYPE_NAME("microchip-splashkit")
 OBJECT_DECLARE_SIMPLE_TYPE(MicrochipSplashKitState,
                            MICROCHIP_SPLASHKIT_MACHINE)
@@ -222,7 +92,7 @@ static void microchip_splashkit_machine_init(MachineState *machine)
                                memmap[MICROCHIP_SPLASHKIT_MTIMECMP].base,
                                MICROCHIP_SPLASHKIT_TIMEBASE_FREQ, false);
 
-    uart = qdev_new(TYPE_MICROCHIP_SPLASHKIT_COREUART);
+    uart = qdev_new(TYPE_MICROCHIP_COREUART);
     qdev_prop_set_chr(uart, "chardev", serial_hd(0));
     sysbus_realize_and_unref(SYS_BUS_DEVICE(uart), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(uart), 0,
@@ -315,7 +185,6 @@ static const TypeInfo microchip_splashkit_machine_type_info = {
 
 static void microchip_splashkit_register_types(void)
 {
-    type_register_static(&microchip_splashkit_coreuart_type_info);
     type_register_static(&microchip_splashkit_machine_type_info);
 }
 
