@@ -1,3 +1,84 @@
+==========================
+Space Cubics Fork of QEMU
+==========================
+
+Features
+========
+
+Boards
+------
+
+* Microchip SplashKit
+
+Devices
+-------
+
+* Microchip CoreUART
+* Space Cubics GPIO IP Core
+
+
+Building
+========
+
+Clone the repository and switch to the ``dev`` branch:
+
+.. code-block:: console
+
+   git clone https://github.com/spacecubics/qemu.git
+   cd qemu
+   git checkout dev
+
+Create a build directory and configure QEMU:
+
+.. code-block:: console
+
+   mkdir build
+   cd build
+
+   ../configure \
+       --target-list=riscv32-softmmu \
+       --disable-werror \
+       --disable-docs \
+       --disable-gtk \
+       --disable-sdl \
+       --disable-vnc \
+       --disable-opengl \
+       --disable-curses \
+       --disable-user
+
+Build QEMU:
+
+.. code-block:: console
+
+   make -j12
+
+
+Using It with Zephyr
+====================
+
+Set ``QEMU_BIN_PATH`` to the QEMU build directory and run the Zephyr
+application:
+
+.. code-block:: console
+
+   QEMU_BIN_PATH="QEMU_BUILD_DIR" west build -t run -p always -b BOARD_NAME PROJECT_NAME
+
+If the Zephyr board name differs from the QEMU machine name, add a
+configuration similar to the following to your ``board.cmake``:
+
+.. code-block:: cmake
+
+   set(SUPPORTED_EMU_PLATFORMS qemu)
+   set(QEMU_binary_suffix riscv32)
+
+   set(QEMU_FLAGS_${ARCH}
+     -machine microchip-splashkit
+   )
+
+   include(${ZEPHYR_BASE}/boards/common/qemu.board.cmake)
+
+----------------------
+
 ===========
 QEMU README
 ===========
