@@ -12,6 +12,7 @@
 #include "hw/riscv/riscv_hart.h"
 #include "chardev/char-fe.h"
 #include "chardev/char.h"
+#include "qobject/qlist.h"
 #include "target/riscv/cpu.h"
 #include "system/system.h"
 
@@ -190,6 +191,7 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     const MemMapEntry *memmap = microchip_splashkit_memmap;
     DeviceState *uart;
     DeviceState *gpio;
+    QList *gpio_present;
     RISCVBootInfo boot_info;
     hwaddr kernel_entry = memmap[MICROCHIP_SPLASHKIT_TCM].base;
 
@@ -226,6 +228,12 @@ static void microchip_splashkit_machine_init(MachineState *machine)
                     memmap[MICROCHIP_SPLASHKIT_UART].base);
 
     gpio = qdev_new(TYPE_SC_GPIO);
+    qdev_prop_set_uint32(gpio, "num_ports", 3);
+    gpio_present = qlist_new();
+    qlist_append_int(gpio_present, 0x0000ffff);
+    qlist_append_int(gpio_present, 0xffffffff);
+    qlist_append_int(gpio_present, 0xffffffff);
+    qdev_prop_set_array(gpio, "present", gpio_present);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
     sysbus_connect_irq(SYS_BUS_DEVICE(gpio), 0,
                        qdev_get_gpio_in(s->plic,

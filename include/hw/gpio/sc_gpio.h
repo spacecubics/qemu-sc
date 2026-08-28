@@ -73,6 +73,8 @@ struct SCGPIOState {
 
     /* config */
     uint32_t num_ports;
+    uint32_t num_present;
+    uint32_t *present;
 };
 
 #endif /* SC_GPIO_H */
