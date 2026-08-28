@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "qemu/log.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
@@ -56,44 +57,50 @@ static uint64_t sc_gpio_read(void *opaque, hwaddr offset, unsigned int size)
     SCGPIOState *s = SC_GPIO(opaque);
     uint32_t r = 0;
 
-    switch (offset) {
-    case SC_GPIO_REG_IP_VERSION:
-        r = s->ip_version;
-        break;
-    case SC_GPIO_REG_IP_CONFIG:
-        r = s->ip_config;
-        break;
-    case SC_GPIO_REG_IP_RST:
-        r = s->ip_reset;
-        break;
-    default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                "%s: bad read offset 0x%" HWADDR_PRIx "\n",
-                      __func__, offset);
-    }
-
-    /* Port registers */
     if (offset >= SC_GPIO_PORT_REG_BASE) {
         uint32_t relative = offset - SC_GPIO_PORT_REG_BASE;
         uint32_t port = relative / SC_GPIO_PORT_REG_STRIDE;
         uint32_t reg = relative % SC_GPIO_PORT_REG_STRIDE;
+
         switch (reg) {
-            case SC_GPIO_PORT_REG_INPUT:
-                r = s->ports[port].input;
-                break;
-            case SC_GPIO_PORT_REG_PRESENT:
-                r = s->ports[port].present;
-                break;
-            case SC_GPIO_PORT_REG_OUTPUT:
-                r = s->ports[port].output;
-                break;
-            case SC_GPIO_PORT_REG_DIR:
-                r = s->ports[port].dir;
-                break;
-            default:
-                qemu_log_mask(LOG_GUEST_ERROR,
-                        "%s: bad read offset 0x%" HWADDR_PRIx "\n",
-                            __func__, offset);
+        case SC_GPIO_PORT_REG_INPUT:
+            r = s->ports[port].input;
+            break;
+        case SC_GPIO_PORT_REG_PRESENT:
+            r = s->ports[port].present;
+            break;
+        case SC_GPIO_PORT_REG_OUTPUT:
+            r = s->ports[port].output;
+            break;
+        case SC_GPIO_PORT_REG_DIR:
+            r = s->ports[port].dir;
+            break;
+        default:
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "%s: bad read offset 0x%" HWADDR_PRIx "\n",
+                          __func__, offset);
+        }
+    } else {
+        switch (offset) {
+        case SC_GPIO_REG_IP_VERSION:
+            r = s->ip_version;
+            break;
+        case SC_GPIO_REG_IP_CONFIG:
+            r = s->ip_config;
+            break;
+        case SC_GPIO_REG_IP_RST:
+            r = s->ip_reset;
+            break;
+        case SC_GPIO_REG_INT_ENABLE:
+            r = s->int_enable;
+            break;
+        case SC_GPIO_REG_INT_STATUS:
+            r = s->int_status;
+            break;
+        default:
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "%s: bad read offset 0x%" HWADDR_PRIx "\n",
+                          __func__, offset);
         }
     }
 
@@ -105,31 +112,32 @@ static void sc_gpio_write(void *opaque, hwaddr offset,
 {
     SCGPIOState *s = SC_GPIO(opaque);
 
-    switch (offset) {
-    case SC_GPIO_REG_IP_RST:
-        s->ip_reset = (uint32_t)value;
-        break;
-
-    default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: bad write offset 0x%" HWADDR_PRIx "\n",
-                      __func__, offset);
-    }
-
-    /* Port registers */
     if (offset >= SC_GPIO_PORT_REG_BASE) {
         uint32_t relative = offset - SC_GPIO_PORT_REG_BASE;
         uint32_t port = relative / SC_GPIO_PORT_REG_STRIDE;
         uint32_t reg = relative % SC_GPIO_PORT_REG_STRIDE;
+
         switch (reg) {
-            case SC_GPIO_PORT_REG_DIR:
-                s->ports[port].dir = (uint32_t)value;
-                break;
-            case SC_GPIO_PORT_REG_OUTPUT:
-                s->ports[port].output = (uint32_t)value;
-                break;
-            default:
-                break;
+        case SC_GPIO_PORT_REG_DIR:
+            s->ports[port].dir = (uint32_t)value;
+            break;
+        case SC_GPIO_PORT_REG_OUTPUT:
+            s->ports[port].output = (uint32_t)value;
+            break;
+        default:
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "%s: bad write offset 0x%" HWADDR_PRIx "\n",
+                          __func__, offset);
+        }
+    } else {
+        switch (offset) {
+        case SC_GPIO_REG_IP_RST:
+            s->ip_reset = (uint32_t)value;
+            break;
+        default:
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "%s: bad write offset 0x%" HWADDR_PRIx "\n",
+                          __func__, offset);
         }
     }
 
@@ -171,11 +179,14 @@ static void sc_gpio_reset(DeviceState *dev)
     s->ip_config = s->num_ports;
     s->ip_reset = BIT(0);
     for (uint32_t i = 0; i < 32; i++) {
+    for (uint32_t i = 0; i < SC_GPIO_MAX_PORTS; i++) {
+        s->ports[i].output = 0;
         s->ports[i].input = 0;
         s->ports[i].external_input = 0;
         s->ports[i].external_mask = 0;
         s->ports[i].driven = 0;
         s->ports[i].drive_mask = 0;
+        /* Enable all pins */
         s->ports[i].present = 0xFFFFFFFF;
         s->ports[i].pending = 0;
         s->ports[i].int_en = 0;
@@ -229,6 +240,11 @@ static void sc_gpio_realize(DeviceState *dev, Error **errp)
 {
     SCGPIOState *s = SC_GPIO(dev);
 
+    if (s->num_ports > SC_GPIO_MAX_PORTS) {
+        error_setg(errp, "num_ports must not exceed %u", SC_GPIO_MAX_PORTS);
+        return;
+    }
+
     memory_region_init_io(&s->mmio, OBJECT(dev), &gpio_ops, s,
             TYPE_SC_GPIO, SC_GPIO_SIZE);
 
@@ -237,7 +253,8 @@ static void sc_gpio_realize(DeviceState *dev, Error **errp)
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
 
     qdev_init_gpio_in(DEVICE(s), sc_gpio_set, s->num_ports * SC_GPIO_PINS);
-    qdev_init_gpio_out(DEVICE(s), &s->output[0][0], s->num_ports * SC_GPIO_PINS);
+    qdev_init_gpio_out(DEVICE(s), &s->output[0][0],
+                       s->num_ports * SC_GPIO_PINS);
 }
 
 static void sc_gpio_class_init(ObjectClass *klass, const void *data)
