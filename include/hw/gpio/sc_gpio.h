@@ -68,6 +68,7 @@ struct SCGPIOState {
     uint32_t ip_reset;
     uint32_t scratch_pad;
     uint32_t int_enable;
+    uint32_t int_status;
     SCGPIOPortState ports[SC_GPIO_MAX_PORTS];
 
     /* config */

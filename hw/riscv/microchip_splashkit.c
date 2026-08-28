@@ -37,6 +37,7 @@ static const MemMapEntry microchip_splashkit_memmap[] = {
 
 #define MICROCHIP_SPLASHKIT_TIMEBASE_FREQ 25000000
 #define MICROCHIP_SPLASHKIT_PLIC_SOURCES  32
+#define MICROCHIP_SPLASHKIT_GPIO_IRQ      1
 /* The DTS PLIC window overlaps the timer; only the register aperture is MMIO. */
 #define MICROCHIP_SPLASHKIT_PLIC_APERTURE_SIZE 0x00201000
 #define MICROCHIP_SPLASHKIT_MTIMER_SIZE 0x00008000
@@ -226,6 +227,9 @@ static void microchip_splashkit_machine_init(MachineState *machine)
 
     gpio = qdev_new(TYPE_SC_GPIO);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
+    sysbus_connect_irq(SYS_BUS_DEVICE(gpio), 0,
+                       qdev_get_gpio_in(s->plic,
+                                        MICROCHIP_SPLASHKIT_GPIO_IRQ));
     sysbus_mmio_map(SYS_BUS_DEVICE(gpio), 0,
                     memmap[SPACECUBICS_GPIO].base);
 

@@ -7,8 +7,20 @@
 #include "migration/vmstate.h"
 #include "trace.h"
 
-static void update_output_irq(SCGPIOState *s)
+static void update_int_status(SCGPIOState *s)
 {
+    uint32_t port;
+
+    s->int_status = 0;
+    for (port = 0; port < s->num_ports; port++) {
+        SCGPIOPortState *p = &s->ports[port];
+
+        if (p->pending & p->int_en) {
+            s->int_status |= BIT(port);
+        }
+    }
+
+    qemu_set_irq(s->irq, !!(s->int_status & s->int_enable));
 }
 
 static void update_state(SCGPIOState *s)
@@ -27,6 +39,7 @@ static void update_state(SCGPIOState *s)
             bool output_enabled = extract32(p->dir, pin, 1);
             bool output = extract32(p->output, pin, 1);
             bool value;
+            bool old_value;
 
             if (externally_driven) {
                 value = extract32(p->external_input, pin, 1);
@@ -35,7 +48,16 @@ static void update_state(SCGPIOState *s)
             } else {
                 value = false;
             }
+
+            old_value = extract32(p->input, pin, 1);
             p->input = deposit32(p->input, pin, 1, value);
+
+            /* Check if interrupt condition is fulfilled */
+            if (value != old_value &&
+                ((value && extract32(p->rise_en, pin, 1)) ||
+                 (!value && extract32(p->fall_en, pin, 1)))) {
+                p->pending = deposit32(p->pending, pin, 1, 1);
+            }
 
             if (extract32(p->drive_mask, pin, 1) != output_enabled ||
                 (output_enabled &&
@@ -49,7 +71,7 @@ static void update_state(SCGPIOState *s)
         }
     }
 
-    update_output_irq(s);
+    update_int_status(s);
 }
 
 static uint64_t sc_gpio_read(void *opaque, hwaddr offset, unsigned int size)
@@ -74,6 +96,18 @@ static uint64_t sc_gpio_read(void *opaque, hwaddr offset, unsigned int size)
             break;
         case SC_GPIO_PORT_REG_DIR:
             r = s->ports[port].dir;
+            break;
+        case SC_GPIO_PORT_REG_FALL_EN:
+            r = s->ports[port].fall_en;
+            break;
+        case SC_GPIO_PORT_REG_RISE_EN:
+            r = s->ports[port].rise_en;
+            break;
+        case SC_GPIO_PORT_REG_INT_EN:
+            r = s->ports[port].int_en;
+            break;
+        case SC_GPIO_PORT_REG_PENDING:
+            r = s->ports[port].pending;
             break;
         default:
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -124,6 +158,18 @@ static void sc_gpio_write(void *opaque, hwaddr offset,
         case SC_GPIO_PORT_REG_OUTPUT:
             s->ports[port].output = (uint32_t)value;
             break;
+        case SC_GPIO_PORT_REG_FALL_EN:
+            s->ports[port].fall_en = (uint32_t)value;
+            break;
+        case SC_GPIO_PORT_REG_RISE_EN:
+            s->ports[port].rise_en = (uint32_t)value;
+            break;
+        case SC_GPIO_PORT_REG_INT_EN:
+            s->ports[port].int_en = (uint32_t)value;
+            break;
+        case SC_GPIO_PORT_REG_PENDING:
+            s->ports[port].pending &= ~(uint32_t)value;
+            break;
         default:
             qemu_log_mask(LOG_GUEST_ERROR,
                           "%s: bad write offset 0x%" HWADDR_PRIx "\n",
@@ -133,6 +179,9 @@ static void sc_gpio_write(void *opaque, hwaddr offset,
         switch (offset) {
         case SC_GPIO_REG_IP_RST:
             s->ip_reset = (uint32_t)value;
+            break;
+        case SC_GPIO_REG_INT_ENABLE:
+            s->int_enable = (uint32_t)value;
             break;
         default:
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -178,7 +227,9 @@ static void sc_gpio_reset(DeviceState *dev)
     s->ip_version = BIT(24);
     s->ip_config = s->num_ports;
     s->ip_reset = BIT(0);
-    for (uint32_t i = 0; i < 32; i++) {
+    s->int_enable = 0;
+    s->int_status = 0;
+    qemu_set_irq(s->irq, 0);
     for (uint32_t i = 0; i < SC_GPIO_MAX_PORTS; i++) {
         s->ports[i].output = 0;
         s->ports[i].input = 0;
@@ -192,6 +243,12 @@ static void sc_gpio_reset(DeviceState *dev)
         s->ports[i].int_en = 0;
         s->ports[i].rise_en = 0;
         s->ports[i].fall_en = 0;
+
+        if (i < s->num_ports) {
+            for (uint32_t pin = 0; pin < SC_GPIO_PINS; pin++) {
+                qemu_set_irq(s->output[i][pin], -1);
+            }
+        }
     }
 }
 
@@ -226,6 +283,7 @@ static const VMStateDescription vmstate_sc_gpio = {
         VMSTATE_UINT32(ip_reset,   SCGPIOState),
         VMSTATE_UINT32(scratch_pad, SCGPIOState),
         VMSTATE_UINT32(int_enable,  SCGPIOState),
+        VMSTATE_UINT32(int_status, SCGPIOState),
         VMSTATE_STRUCT_ARRAY(ports, SCGPIOState, SC_GPIO_MAX_PORTS,
                              1, vmstate_sc_gpio_port, SCGPIOPortState),
         VMSTATE_END_OF_LIST()
@@ -249,7 +307,6 @@ static void sc_gpio_realize(DeviceState *dev, Error **errp)
             TYPE_SC_GPIO, SC_GPIO_SIZE);
 
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->mmio);
-
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
 
     qdev_init_gpio_in(DEVICE(s), sc_gpio_set, s->num_ports * SC_GPIO_PINS);
