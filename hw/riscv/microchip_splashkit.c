@@ -192,6 +192,7 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     DeviceState *uart;
     DeviceState *gpio;
     QList *gpio_present;
+    QList *gpio_config;
     RISCVBootInfo boot_info;
     hwaddr kernel_entry = memmap[MICROCHIP_SPLASHKIT_TCM].base;
 
@@ -234,6 +235,21 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     qlist_append_int(gpio_present, 0xffffffff);
     qlist_append_int(gpio_present, 0xffffffff);
     qdev_prop_set_array(gpio, "present", gpio_present);
+    gpio_config = qlist_new();
+    qlist_append_int(gpio_config, 0x00000000);
+    qlist_append_int(gpio_config, 0xffffffff);
+    qlist_append_int(gpio_config, 0xffffffff);
+    qdev_prop_set_array(gpio, "dir-writable", gpio_config);
+    gpio_config = qlist_new();
+    qlist_append_int(gpio_config, 0x000000ff);
+    qlist_append_int(gpio_config, 0x00000000);
+    qlist_append_int(gpio_config, 0x00000000);
+    qdev_prop_set_array(gpio, "dir-init", gpio_config);
+    gpio_config = qlist_new();
+    qlist_append_int(gpio_config, 0x00000000);
+    qlist_append_int(gpio_config, 0x00000000);
+    qlist_append_int(gpio_config, 0x00000000);
+    qdev_prop_set_array(gpio, "out-init", gpio_config);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
     sysbus_connect_irq(SYS_BUS_DEVICE(gpio), 0,
                        qdev_get_gpio_in(s->plic,

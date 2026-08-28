@@ -75,6 +75,12 @@ struct SCGPIOState {
     uint32_t num_ports;
     uint32_t num_present;
     uint32_t *present;
+    uint32_t num_dir_writable;
+    uint32_t *dir_writable;
+    uint32_t num_dir_init;
+    uint32_t *dir_init;
+    uint32_t num_out_init;
+    uint32_t *out_init;
 };
 
 #endif /* SC_GPIO_H */
