@@ -17,6 +17,7 @@ config MICROCHIP_SPLASHKIT
     select SIFIVE_PLIC
     select MICROCHIP_COREUART
     select SC_GPIO
+    select SC_SPI
     select UNIMP
 
 config MICROCHIP_PFSOC
