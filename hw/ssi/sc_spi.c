@@ -3,7 +3,6 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/ssi/ssi.h"
-#include "qemu/fifo32.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "migration/vmstate.h"
@@ -46,9 +45,8 @@ static void sc_spi_reset_registers(ScSPIState *s)
     s->clk_div = 1;
     s->start_mode = false;
     s->byte_order = false;
-
-    fifo32_reset(&s->tx_fifo);
-    fifo32_reset(&s->rx_fifo);
+    s->txdata = 0;
+    s->rxdata = 0;
 }
 
 static void sc_spi_reset(DeviceState *d)
@@ -142,7 +140,7 @@ static uint32_t sc_spi_transfer_frame(ScSPIState *s, uint32_t tx_frame)
     return rx_frame;
 }
 
-static void sc_spi_flush_txfifo(ScSPIState *s)
+static void sc_spi_transfer(ScSPIState *s)
 {
     /*
      * txdata:   value written by the guest to TXDATA
@@ -150,22 +148,12 @@ static void sc_spi_flush_txfifo(ScSPIState *s)
      * rx_frame: bits returned in physical reception order
      * rxdata:   received bits arranged in RXDATA register format
      */
-    uint32_t txdata;
     uint32_t tx_frame;
     uint32_t rx_frame;
-    uint32_t rxdata;
 
-    while (!fifo32_is_empty(&s->tx_fifo)) {
-        txdata = fifo32_pop(&s->tx_fifo);
-        tx_frame = sc_spi_pack_txdata(s, txdata);
-        rx_frame = sc_spi_transfer_frame(s, tx_frame);
-        rxdata = sc_spi_unpack_rxdata(s, rx_frame);
-
-        if (fifo32_is_full(&s->rx_fifo)) {
-            fifo32_reset(&s->rx_fifo);
-        }
-        fifo32_push(&s->rx_fifo, rxdata);
-    }
+    tx_frame = sc_spi_pack_txdata(s, s->txdata);
+    rx_frame = sc_spi_transfer_frame(s, tx_frame);
+    s->rxdata = sc_spi_unpack_rxdata(s, rx_frame);
 }
 
 static uint64_t sc_spi_read(void *opaque, hwaddr addr, unsigned int size)
@@ -212,10 +200,7 @@ static uint64_t sc_spi_read(void *opaque, hwaddr addr, unsigned int size)
         r = s->int_status;
         break;
     case SC_SPI_RXDATA(0):
-        if (fifo32_is_empty(&s->rx_fifo)) {
-            return 0;
-        }
-        r = fifo32_pop(&s->rx_fifo);
+        r = s->rxdata;
         break;
     default:
         break;
@@ -261,7 +246,7 @@ static void sc_spi_write(void *opaque, hwaddr addr,
                     s->cs_active = true;
                 }
 
-                sc_spi_flush_txfifo(s);
+                sc_spi_transfer(s);
 
                 if (!s->cs_ext && s->cs_select < s->num_cs) {
                     qemu_set_irq(s->cs_lines[s->cs_select], 1);
@@ -290,10 +275,7 @@ static void sc_spi_write(void *opaque, hwaddr addr,
             s->int_status &= ~value;
             break;
         case SC_SPI_TXDATA(0):
-            if (fifo32_is_full(&s->tx_fifo)) {
-                fifo32_reset(&s->tx_fifo);
-            }
-            fifo32_push(&s->tx_fifo, value);
+            s->txdata = value;
             break;
         default:
             break;
@@ -351,8 +333,8 @@ static const VMStateDescription vmstate_sc_spi = {
         VMSTATE_UINT8(clk_div, ScSPIState),
         VMSTATE_BOOL(start_mode, ScSPIState),
         VMSTATE_BOOL(byte_order, ScSPIState),
-        VMSTATE_FIFO32(tx_fifo, ScSPIState),
-        VMSTATE_FIFO32(rx_fifo, ScSPIState),
+        VMSTATE_UINT32(txdata, ScSPIState),
+        VMSTATE_UINT32(rxdata, ScSPIState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -375,8 +357,6 @@ static void sc_spi_realize(DeviceState *dev, Error **errp)
                           TYPE_SC_SPI, 0x1000);
     sysbus_init_mmio(sbd, &s->mmio);
 
-    fifo32_create(&s->tx_fifo, 1);
-    fifo32_create(&s->rx_fifo, 1);
 }
 
 static const Property sc_spi_properties[] = {

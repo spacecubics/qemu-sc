@@ -1,7 +1,6 @@
 #ifndef HW_SC_SPI_H
 #define HW_SC_SPI_H
 
-#include "qemu/fifo32.h"
 #include "hw/core/sysbus.h"
 
 #define TYPE_SC_SPI "sc.spi"
@@ -41,8 +40,8 @@ typedef struct ScSPIState {
 
     SSIBus *spi;
 
-    Fifo32 tx_fifo;
-    Fifo32 rx_fifo;
+    uint32_t txdata;
+    uint32_t rxdata;
 } ScSPIState;
 
 #endif /* HW_SC_SPI_H */
