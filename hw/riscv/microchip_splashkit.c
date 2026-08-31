@@ -5,6 +5,7 @@
 #include "hw/core/loader.h"
 #include "hw/core/qdev-properties-system.h"
 #include "hw/core/sysbus.h"
+#include "hw/block/flash.h"
 #include "hw/gpio/sc_gpio.h"
 #include "hw/ssi/sc_spi.h"
 #include "hw/char/microchip_coreuart.h"
@@ -17,6 +18,7 @@
 #include "qobject/qlist.h"
 #include "target/riscv/cpu.h"
 #include "system/system.h"
+#include "hw/ssi/ssi.h"
 
 enum {
     MICROCHIP_SPLASHKIT_ROM,
@@ -66,6 +68,7 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     DeviceState *uart;
     DeviceState *gpio;
     DeviceState *spi;
+    DeviceState *flash_dev;
     QList *gpio_present;
     QList *gpio_config;
     RISCVBootInfo boot_info;
@@ -111,6 +114,11 @@ static void microchip_splashkit_machine_init(MachineState *machine)
                        qdev_get_gpio_in(s->plic,
                                         MICROCHIP_SPLASHKIT_SPI_IRQ));
     sysbus_mmio_map(SYS_BUS_DEVICE(spi), 0, memmap[SPACECUBICS_SPI].base);
+
+    /* Example flash device */
+    flash_dev = qdev_new("w25q64");
+    ssi_realize_and_unref(flash_dev, SC_SPI(spi)->spi, &error_fatal);
+    sysbus_connect_irq(SYS_BUS_DEVICE(spi), 1, qdev_get_gpio_in_named(flash_dev, SSI_GPIO_CS, 0));
 
     gpio = qdev_new(TYPE_SC_GPIO);
     qdev_prop_set_uint32(gpio, "num_ports", 3);
