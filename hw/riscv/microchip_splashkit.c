@@ -6,6 +6,7 @@
 #include "hw/core/qdev-properties-system.h"
 #include "hw/core/sysbus.h"
 #include "hw/gpio/sc_gpio.h"
+#include "hw/ssi/sc_spi.h"
 #include "hw/char/microchip_coreuart.h"
 #include "hw/intc/riscv_aclint.h"
 #include "hw/intc/sifive_plic.h"
@@ -25,6 +26,7 @@ enum {
     MICROCHIP_SPLASHKIT_MTIME,
     MICROCHIP_SPLASHKIT_TCM,
     SPACECUBICS_GPIO,
+    SPACECUBICS_SPI,
 };
 
 static const MemMapEntry microchip_splashkit_memmap[] = {
@@ -35,11 +37,13 @@ static const MemMapEntry microchip_splashkit_memmap[] = {
     [MICROCHIP_SPLASHKIT_MTIME] =    { 0x1200bff8, 0x00000008 },
     [MICROCHIP_SPLASHKIT_TCM] =      { 0x20000000, 0x00040000 },
     [SPACECUBICS_GPIO] =             { 0x80010000, 0x00001000 },
+    [SPACECUBICS_SPI] =             { 0x80040000, 0x00001000 },
 };
 
 #define MICROCHIP_SPLASHKIT_TIMEBASE_FREQ 25000000
 #define MICROCHIP_SPLASHKIT_PLIC_SOURCES  32
 #define MICROCHIP_SPLASHKIT_GPIO_IRQ      1
+#define MICROCHIP_SPLASHKIT_SPI_IRQ      4
 /* The DTS PLIC window overlaps the timer; only the register aperture is MMIO. */
 #define MICROCHIP_SPLASHKIT_PLIC_APERTURE_SIZE 0x00201000
 #define MICROCHIP_SPLASHKIT_MTIMER_SIZE 0x00008000
@@ -61,6 +65,7 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     const MemMapEntry *memmap = microchip_splashkit_memmap;
     DeviceState *uart;
     DeviceState *gpio;
+    DeviceState *spi;
     QList *gpio_present;
     QList *gpio_config;
     RISCVBootInfo boot_info;
@@ -97,6 +102,15 @@ static void microchip_splashkit_machine_init(MachineState *machine)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(uart), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(uart), 0,
                     memmap[MICROCHIP_SPLASHKIT_UART].base);
+
+    spi = qdev_new(TYPE_SC_SPI);
+    qdev_prop_set_uint32(spi, "num-cs", 1);
+    qdev_prop_set_uint8(spi, "num-buf", 1);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(spi), &error_fatal);
+    sysbus_connect_irq(SYS_BUS_DEVICE(spi), 0,
+                       qdev_get_gpio_in(s->plic,
+                                        MICROCHIP_SPLASHKIT_SPI_IRQ));
+    sysbus_mmio_map(SYS_BUS_DEVICE(spi), 0, memmap[SPACECUBICS_SPI].base);
 
     gpio = qdev_new(TYPE_SC_GPIO);
     qdev_prop_set_uint32(gpio, "num_ports", 3);
