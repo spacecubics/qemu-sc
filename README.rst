@@ -15,6 +15,7 @@ Devices
 
 * Microchip CoreUART
 * Space Cubics GPIO IP Core
+* Space Cubics SPI-Lite IP Core
 
 
 Building
